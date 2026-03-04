@@ -85,6 +85,17 @@ def generate_metadata(project, version):
     for label, url in project.get("urls", {}).items():
         lines.append(f"Project-URL: {label}, {url}")
 
+    # README as long description
+    readme = project.get("readme")
+    if isinstance(readme, str):
+        content_type = "text/markdown" if readme.endswith(".md") else "text/plain"
+        readme_path = os.path.join(os.path.dirname(__file__), "..", readme)
+        if os.path.isfile(readme_path):
+            with open(readme_path, "r", encoding="utf-8") as f:
+                readme_text = f.read()
+            lines.append(f"Description-Content-Type: {content_type}")
+            return "\n".join(lines) + "\n\n" + readme_text + "\n"
+
     return "\n".join(lines) + "\n"
 
 

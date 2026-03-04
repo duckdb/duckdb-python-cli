@@ -2,7 +2,6 @@
 
 import io
 import os
-import sys
 import zipfile
 from unittest.mock import MagicMock, patch
 
@@ -86,10 +85,8 @@ class TestDownload:
         with patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
             result = download("osx-arm64", version="1.2.3", out_dir=str(tmp_path / "bin"))
 
-        # Should have normalized version to v1.2.3
         call_url = mock_urlopen.call_args[0][0]
         assert "v1.2.3" in call_url
-
         assert len(result) == 1
 
     def test_download_version_with_v_prefix(self, tmp_path):
@@ -104,7 +101,6 @@ class TestDownload:
 
         call_url = mock_urlopen.call_args[0][0]
         assert "v1.2.3" in call_url
-        # Should not have double v prefix
         assert "vv1.2.3" not in call_url
 
     def test_download_creates_out_dir(self, tmp_path):
@@ -137,24 +133,22 @@ class TestDownload:
 
 class TestEnsureBinary:
     def test_returns_existing_binary(self, tmp_path):
-        """When binary already exists, return path immediately without downloading."""
+        """When binary already exists, return path without downloading."""
         pkg_dir = tmp_path / "duckdb_cli"
-        bin_dir = pkg_dir / "bin"
-        bin_dir.mkdir(parents=True)
-        binary = bin_dir / "duckdb"
+        pkg_dir.mkdir(parents=True)
+        binary = pkg_dir / "duckdb"
         binary.write_bytes(b"fake")
 
         with patch("duckdb_cli.downloader.os.path.dirname", return_value=str(pkg_dir)), \
              patch("duckdb_cli.downloader.sys.platform", "linux"):
             result = ensure_binary()
 
-        assert result == str(bin_dir / "duckdb")
+        assert result == str(pkg_dir / "duckdb")
 
     def test_downloads_when_missing(self, tmp_path):
-        """When binary doesn't exist, download it."""
+        """When binary doesn't exist, download it to pkg_dir."""
         pkg_dir = tmp_path / "duckdb_cli"
         pkg_dir.mkdir(parents=True)
-        bin_dir = pkg_dir / "bin"
 
         def fake_download(plat, out_dir):
             os.makedirs(out_dir, exist_ok=True)
@@ -169,21 +163,20 @@ class TestEnsureBinary:
              patch("duckdb_cli.downloader.detect_platform", return_value="linux-amd64"):
             result = ensure_binary()
 
-        assert result == str(bin_dir / "duckdb")
+        assert result == str(pkg_dir / "duckdb")
 
     def test_windows_binary_name(self, tmp_path):
         """On Windows, look for duckdb.exe."""
         pkg_dir = tmp_path / "duckdb_cli"
-        bin_dir = pkg_dir / "bin"
-        bin_dir.mkdir(parents=True)
-        binary = bin_dir / "duckdb.exe"
+        pkg_dir.mkdir(parents=True)
+        binary = pkg_dir / "duckdb.exe"
         binary.write_bytes(b"fake")
 
         with patch("duckdb_cli.downloader.os.path.dirname", return_value=str(pkg_dir)), \
              patch("duckdb_cli.downloader.sys.platform", "win32"):
             result = ensure_binary()
 
-        assert result == str(bin_dir / "duckdb.exe")
+        assert result == str(pkg_dir / "duckdb.exe")
 
 
 class TestGetLatestVersion:
@@ -198,8 +191,7 @@ class TestGetLatestVersion:
 
 
 class TestMainCli:
-    def test_main_auto_detect(self, tmp_path):
-        """_main() with no --platform flag auto-detects and downloads."""
+    def test_main_auto_detect(self):
         with patch("duckdb_cli.downloader.argparse.ArgumentParser.parse_args") as mock_parse, \
              patch("duckdb_cli.downloader.detect_platform", return_value="osx-arm64") as mock_detect, \
              patch("duckdb_cli.downloader.download") as mock_dl:
@@ -209,7 +201,6 @@ class TestMainCli:
             mock_dl.assert_called_once_with("osx-arm64")
 
     def test_main_explicit_platform(self):
-        """_main() with explicit --platform passes it to download()."""
         with patch("duckdb_cli.downloader.argparse.ArgumentParser.parse_args") as mock_parse, \
              patch("duckdb_cli.downloader.download") as mock_dl:
             mock_parse.return_value = MagicMock(platform="linux-amd64")
