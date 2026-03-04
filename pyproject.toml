@@ -1,0 +1,53 @@
+[project]
+name = "duckdb-cli"
+version = "0.0.0"
+description = "The DuckDB CLI"
+readme = "README.md"
+requires-python = ">=3.6"
+dependencies = []
+keywords = ["DuckDB", "Database", "SQL", "OLAP"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Database",
+    "Topic :: Database :: Database Engines/Servers",
+    "Topic :: Scientific/Engineering",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+authors = [{name = "DuckDB Foundation"}]
+maintainers = [{name = "DuckDB Foundation"}]
+
+[project.urls]
+Documentation = "https://duckdb.org/docs/"
+Source = "https://github.com/duckdb/duckdb"
+Issues = "https://github.com/duckdb/duckdb/issues"
+Changelog = "https://github.com/duckdb/duckdb/releases"
+
+[project.scripts]
+duckdb = "duckdb_cli.__main__:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+data.scripts = "bin"
+
+[dependency-groups]
+dist = ["tomli; python_version < '3.11'"]
+test = ["pytest", "pytest-cov"]
+
+[tool.coverage.run]
+source = ["duckdb_cli", "build_wheels"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__",
+    "import tomli",
+]

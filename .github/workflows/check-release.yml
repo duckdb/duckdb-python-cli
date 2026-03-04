@@ -1,0 +1,42 @@
+name: Check for new DuckDB release
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # every night at 3:00 UTC
+  workflow_dispatch: # allow manual trigger
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.duckdb.outputs.version }}
+      published: ${{ steps.pypi.outputs.published }}
+    steps:
+      - name: Get latest stable DuckDB release
+        id: duckdb
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh api repos/duckdb/duckdb/releases/latest --jq '.tag_name' | sed 's/^v//')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Latest DuckDB release: $version"
+
+      - name: Check if already published on PyPI
+        id: pypi
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json")
+          if [ "$status" = "200" ]; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.duckdb.outputs.version }} already on PyPI"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "Version ${{ steps.duckdb.outputs.version }} not yet on PyPI"
+          fi
+
+  publish:
+    needs: check
+    if: needs.check.outputs.published == 'false'
+    uses: ./.github/workflows/publish.yml
+    with:
+      version: ${{ needs.check.outputs.version }}

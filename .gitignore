@@ -1,0 +1,21 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# DuckDB binary and runtime dirs (downloaded for dev, shipped in wheel)
+src/duckdb_cli/bin/
+src/duckdb_cli/duckdb
+src/duckdb_cli/duckdb.exe
+src/duckdb_cli/extensions/
+src/duckdb_cli/secrets/
+
+# rest
+.coverage
+.python-version
