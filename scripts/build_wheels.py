@@ -85,6 +85,15 @@ def generate_metadata(project, version):
     for label, url in project.get("urls", {}).items():
         lines.append(f"Project-URL: {label}, {url}")
 
+    # Optional dependencies (extras)
+    optional_deps = project.get("optional-dependencies", {})
+    for extra_name in sorted(optional_deps):
+        lines.append(f"Provides-Extra: {extra_name}")
+    for extra_name in sorted(optional_deps):
+        for dep in optional_deps[extra_name]:
+            dep = dep.replace("0.0.0", version)
+            lines.append(f'Requires-Dist: {dep} ; extra == "{extra_name}"')
+
     # README as long description
     readme = project.get("readme")
     if isinstance(readme, str):

@@ -7,9 +7,20 @@ on:
         description: "DuckDB version to publish (e.g. 1.4.4)"
         required: true
         type: string
+      environment:
+        description: "Target PyPI environment"
+        required: true
+        type: choice
+        options:
+          - pypi-test
+          - pypi
+        default: pypi-test
   workflow_call:
     inputs:
       version:
+        required: true
+        type: string
+      environment:
         required: true
         type: string
 
@@ -32,7 +43,7 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: ${{ inputs.environment }}
     permissions:
       id-token: write
     steps:
@@ -41,6 +52,8 @@ jobs:
           name: wheels
           path: dist/
 
-      - uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          repository-url: ${{ inputs.environment == 'pypi-test' && 'https://test.pypi.org/legacy/' || '' }}

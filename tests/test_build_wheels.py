@@ -33,7 +33,7 @@ class TestGenerateMetadata:
         assert "Name: duckdb-cli" in metadata
         assert "Version: 1.0.0" in metadata
         assert "Summary: The DuckDB CLI" in metadata
-        assert "Requires-Python: >=3.6" in metadata
+        assert "Requires-Python: >=3.8" in metadata
         assert "Author: DuckDB Foundation" in metadata
         assert "Maintainer: DuckDB Foundation" in metadata
         assert "Keywords: DuckDB," in metadata

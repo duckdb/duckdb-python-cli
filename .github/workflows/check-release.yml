@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "0 3 * * *" # every night at 3:00 UTC
   workflow_dispatch: # allow manual trigger
+    inputs:
+      environment:
+        description: "Target PyPI environment"
+        required: true
+        type: choice
+        options:
+          - pypi-test
+          - pypi
+        default: pypi-test
 
 jobs:
   check:
@@ -24,14 +33,18 @@ jobs:
       - name: Check if already published on PyPI
         id: pypi
         run: |
-          status=$(curl -s -o /dev/null -w '%{http_code}' \
-            "https://pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json")
+          if [ "${{ inputs.environment }}" = "pypi" ]; then
+            pypi_url="https://pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
+          else
+            pypi_url="https://test.pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
+          fi
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$pypi_url")
           if [ "$status" = "200" ]; then
             echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "Version ${{ steps.duckdb.outputs.version }} already on PyPI"
+            echo "Version ${{ steps.duckdb.outputs.version }} already published"
           else
             echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "Version ${{ steps.duckdb.outputs.version }} not yet on PyPI"
+            echo "Version ${{ steps.duckdb.outputs.version }} not yet published"
           fi
 
   publish:
@@ -40,3 +53,4 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       version: ${{ needs.check.outputs.version }}
+      environment: ${{ inputs.environment || 'pypi' }}
