@@ -29,7 +29,33 @@ Source = "https://github.com/duckdb/duckdb"
 Issues = "https://github.com/duckdb/duckdb/issues"
 Changelog = "https://github.com/duckdb/duckdb/releases"
 
-[project.optional-dependencies]
+[project.scripts]
+duckdb = "duckdb_cli.__main__:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+data.scripts = "bin"
+
+[dependency-groups]
+dist = ["tomli; python_version < '3.11'"]
+test = ["pytest", "pytest-cov"]
+
+[tool.coverage.run]
+source = ["duckdb_cli", "build_wheels"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__",
+    "import tomli",
+]
+
+# Extension extras for wheel metadata only (not resolved by uv).
+# The build script reads this and emits Provides-Extra / Requires-Dist
+# into the wheel METADATA. Version 0.0.0 is replaced at build time.
+[tool.duckdb-cli.extras]
 autocomplete = ["duckdb-ext-autocomplete==0.0.0"]
 avro = ["duckdb-ext-avro==0.0.0"]
 aws = ["duckdb-ext-aws==0.0.0"]
@@ -62,40 +88,6 @@ ui = ["duckdb-ext-ui==0.0.0"]
 unity_catalog = ["duckdb-ext-unity_catalog==0.0.0"]
 vortex = ["duckdb-ext-vortex==0.0.0"]
 vss = ["duckdb-ext-vss==0.0.0"]
-all = [
-    "duckdb-ext-autocomplete==0.0.0",
-    "duckdb-ext-avro==0.0.0",
-    "duckdb-ext-aws==0.0.0",
-    "duckdb-ext-azure==0.0.0",
-    "duckdb-ext-core_functions==0.0.0",
-    "duckdb-ext-delta==0.0.0",
-    "duckdb-ext-demo_capi==0.0.0",
-    "duckdb-ext-ducklake==0.0.0",
-    "duckdb-ext-encodings==0.0.0",
-    "duckdb-ext-excel==0.0.0",
-    "duckdb-ext-fts==0.0.0",
-    "duckdb-ext-httpfs==0.0.0",
-    "duckdb-ext-iceberg==0.0.0",
-    "duckdb-ext-icu==0.0.0",
-    "duckdb-ext-inet==0.0.0",
-    "duckdb-ext-jemalloc==0.0.0",
-    "duckdb-ext-json==0.0.0",
-    "duckdb-ext-motherduck==0.0.0",
-    "duckdb-ext-mysql==0.0.0",
-    "duckdb-ext-parquet==0.0.0",
-    "duckdb-ext-postgres==0.0.0",
-    "duckdb-ext-quack==0.0.0",
-    "duckdb-ext-shell==0.0.0",
-    "duckdb-ext-spatial==0.0.0",
-    "duckdb-ext-sqlite==0.0.0",
-    "duckdb-ext-sqlsmith==0.0.0",
-    "duckdb-ext-tpcds==0.0.0",
-    "duckdb-ext-tpch==0.0.0",
-    "duckdb-ext-ui==0.0.0",
-    "duckdb-ext-unity_catalog==0.0.0",
-    "duckdb-ext-vortex==0.0.0",
-    "duckdb-ext-vss==0.0.0",
-]
 # Aliases
 http = ["duckdb-ext-httpfs==0.0.0"]
 https = ["duckdb-ext-httpfs==0.0.0"]
@@ -106,26 +98,3 @@ postgres_scanner = ["duckdb-ext-postgres==0.0.0"]
 sqlite_scanner = ["duckdb-ext-sqlite==0.0.0"]
 sqlite3 = ["duckdb-ext-sqlite==0.0.0"]
 uc_catalog = ["duckdb-ext-unity_catalog==0.0.0"]
-
-[project.scripts]
-duckdb = "duckdb_cli.__main__:main"
-
-[build-system]
-requires = ["uv_build"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-data.scripts = "bin"
-
-[dependency-groups]
-dist = ["tomli; python_version < '3.11'"]
-test = ["pytest", "pytest-cov"]
-
-[tool.coverage.run]
-source = ["duckdb_cli", "build_wheels"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "if __name__",
-    "import tomli",
-]

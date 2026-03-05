@@ -51,7 +51,7 @@ def _record_hash(data):
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def generate_metadata(project, version):
+def generate_metadata(project, version, extras=None):
     """Generate PEP 566 METADATA content from pyproject.toml [project] table."""
     lines = [
         "Metadata-Version: 2.1",
@@ -86,7 +86,15 @@ def generate_metadata(project, version):
         lines.append(f"Project-URL: {label}, {url}")
 
     # Optional dependencies (extras)
-    optional_deps = project.get("optional-dependencies", {})
+    optional_deps = dict(extras or {})
+    # Generate "all" extra from all individual extras
+    if optional_deps and "all" not in optional_deps:
+        all_deps = []
+        for deps in optional_deps.values():
+            all_deps.extend(deps)
+        # Deduplicate while preserving order
+        seen = set()
+        optional_deps["all"] = [d for d in all_deps if d not in seen and not seen.add(d)]
     for extra_name in sorted(optional_deps):
         lines.append(f"Provides-Extra: {extra_name}")
     for extra_name in sorted(optional_deps):
@@ -119,7 +127,7 @@ def _add_file(zf, arcname, data, executable=False):
     zf.writestr(info, data)
 
 
-def build_wheel(plat, version, project, out_dir, download_version=None):
+def build_wheel(plat, version, project, out_dir, download_version=None, extras=None):
     """Build a single platform-specific wheel (PEP 427)."""
     platform_tag = PLATFORM_TAGS[plat]
     dist_name = project["name"].replace("-", "_")
@@ -159,7 +167,7 @@ def build_wheel(plat, version, project, out_dir, download_version=None):
                 records.append((arcname, _record_hash(data), str(len(data))))
 
             # METADATA
-            metadata_content = generate_metadata(project, version)
+            metadata_content = generate_metadata(project, version, extras=extras)
             metadata_bytes = metadata_content.encode("utf-8")
             arcname = f"{dist_info}/METADATA"
             _add_file(zf, arcname, metadata_bytes)
@@ -224,6 +232,7 @@ def main():
 
     pyproject = _read_pyproject()
     project = pyproject["project"]
+    extras = pyproject.get("tool", {}).get("duckdb-cli", {}).get("extras", {})
 
     platforms = [args.platform] if args.platform else AVAILABLE_PLATFORMS
 
@@ -233,7 +242,7 @@ def main():
     wheels = []
     for plat in platforms:
         print(f"\nBuilding wheel for {plat}...")
-        w = build_wheel(plat, args.version, project, args.out_dir, args.download_version)
+        w = build_wheel(plat, args.version, project, args.out_dir, args.download_version, extras=extras)
         if w:
             wheels.append(w)
 
