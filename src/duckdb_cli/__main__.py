@@ -20,37 +20,39 @@ def _get_extensions_dir():
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
     site_packages = os.path.dirname(pkg_dir)
     ext_dir = os.path.join(site_packages, ".duckdb_extensions")
-    if os.path.isdir(ext_dir):
-        return ext_dir
-    return None
-
-
-def _get_version():
-    """Return the duckdb-cli package version as a tuple of ints."""
-    from importlib.metadata import version
-    return tuple(int(x) for x in version("duckdb-cli").split(".")[:3])
+    return ext_dir
 
 
 def _build_ext_cmd(ext_dir):
-    """Build the SQL command to configure the extension search path."""
+    """Build the SQL command to configure the extension search path.
+
+    The idea is:
+    - If extension_directories already has something set, we can assume duckdb
+      will not install extensions in our pip-managed ext dir;
+    - If extension_directory already has something set, then we can assume the
+      same;
+    - Only otherwise, we must prepend a default extension directory that duckdb
+      may install extensions to. The risk is of course that our default is
+      somehow invalid. But we just do not have a way to query the default right
+      now, so this will have to do.
+    """
     escaped = ext_dir.replace("'", "''")
-    if _get_version() >= (1, 5, 0):
-        return f"SET extension_directories=['{escaped}', '~/.duckdb/extensions'];"
-    else:
-        return f"SET extension_directory='{escaped}';"
+    return f"""
+    SET extension_directories = list_concat(
+      CASE
+          WHEN current_setting('extension_directories') != '[]' THEN current_setting('extension_directories')::VARCHAR[]
+          WHEN current_setting('extension_directory') != '' THEN []
+          ELSE ['~/.duckdb/extensions']
+      END,
+      ['{escaped}']
+    );
+    """
 
 
 def main():
     exe = _find_binary()
-    cmd_parts = []
-
     ext_dir = _get_extensions_dir()
-    if ext_dir:
-        cmd_parts.append(_build_ext_cmd(ext_dir))
-
-    cmd = [exe]
-    if cmd_parts:
-        cmd += ["-cmd", " ".join(cmd_parts)]
+    cmd = [exe, "-cmd", _build_ext_cmd(ext_dir)]
     cmd += sys.argv[1:]
     raise SystemExit(subprocess.call(cmd))
 
