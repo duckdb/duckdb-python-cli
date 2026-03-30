@@ -33,7 +33,7 @@ jobs:
       - name: Check if already published on PyPI
         id: pypi
         run: |
-          if [ "${{ inputs.environment }}" = "pypi" ]; then
+          if [ "${{ inputs.environment || 'pypi' }}" = "pypi" ]; then
             pypi_url="https://pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
           else
             pypi_url="https://test.pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
@@ -50,7 +50,13 @@ jobs:
   publish:
     needs: check
     if: needs.check.outputs.published == 'false'
-    uses: ./.github/workflows/publish.yml
-    with:
-      version: ${{ needs.check.outputs.version }}
-      environment: ${{ inputs.environment || 'pypi' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger publish workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run publish.yml \
+            --repo "${{ github.repository }}" \
+            -f version="${{ needs.check.outputs.version }}" \
+            -f environment="${{ inputs.environment || 'pypi' }}"

@@ -15,14 +15,6 @@ on:
           - pypi-test
           - pypi
         default: pypi-test
-  workflow_call:
-    inputs:
-      version:
-        required: true
-        type: string
-      environment:
-        required: true
-        type: string
 
 jobs:
   build:

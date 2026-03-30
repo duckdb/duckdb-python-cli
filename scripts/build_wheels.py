@@ -51,7 +51,7 @@ def _record_hash(data):
     return "sha256=" + base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def generate_metadata(project, version, extras=None):
+def generate_metadata(project, version, download_version=None, extras=None):
     """Generate PEP 566 METADATA content from pyproject.toml [project] table."""
     lines = [
         "Metadata-Version: 2.1",
@@ -99,7 +99,7 @@ def generate_metadata(project, version, extras=None):
         lines.append(f"Provides-Extra: {extra_name}")
     for extra_name in sorted(optional_deps):
         for dep in optional_deps[extra_name]:
-            dep = dep.replace("0.0.0", version)
+            dep = dep.replace("0.0.0", download_version if download_version is not None else version)
             lines.append(f'Requires-Dist: {dep} ; extra == "{extra_name}"')
 
     # README as long description
@@ -167,7 +167,7 @@ def build_wheel(plat, version, project, out_dir, download_version=None, extras=N
                 records.append((arcname, _record_hash(data), str(len(data))))
 
             # METADATA
-            metadata_content = generate_metadata(project, version, extras=extras)
+            metadata_content = generate_metadata(project, version, download_version=download_version, extras=extras)
             metadata_bytes = metadata_content.encode("utf-8")
             arcname = f"{dist_info}/METADATA"
             _add_file(zf, arcname, metadata_bytes)
