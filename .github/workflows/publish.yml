@@ -25,7 +25,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
 
       - name: Build wheels
-        run: uv run --group dist scripts/build_wheels.py --version ${{ inputs.version }}
+        run: uv run --no-project scripts/build_wheels.py --version ${{ inputs.version }}
 
       - uses: actions/upload-artifact@v4
         with:
