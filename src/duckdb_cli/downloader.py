@@ -8,6 +8,8 @@ import os
 import platform
 import stat
 import sys
+import tarfile
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -45,33 +47,69 @@ def _get_latest_version():
         return json.loads(resp.read().decode("utf-8"))["tag_name"]
 
 
+def _asset_candidates(plat):
+    """Release asset names to try, newest layout first.
+
+    DuckDB 2.0.0 renamed the CLI assets from duckdb_cli-<plat>.zip to
+    duckdb-cli-<plat>.tar.gz; older releases only have the zip.
+    """
+    return [
+        (f"duckdb-cli-{plat}.tar.gz", _extract_tar),
+        (f"duckdb_cli-{plat}.zip", _extract_zip),
+    ]
+
+
+def _fetch_asset(version, plat):
+    for asset, extract in _asset_candidates(plat):
+        url = f"{_RELEASES_URL}/download/{version}/{asset}"
+        try:
+            with urllib.request.urlopen(url) as resp:
+                return resp.read(), extract
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+    raise RuntimeError(f"No CLI asset found for DuckDB {version} on {plat}")
+
+
+def _extract_zip(data):
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            yield os.path.basename(info.filename), zf.read(info)
+
+
+def _extract_tar(data):
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+        for member in tf:
+            if not member.isfile():
+                continue
+            with tf.extractfile(member) as f:
+                yield os.path.basename(member.name), f.read()
+
+
 def download(plat, version=None, out_dir="bin"):
     if version is None:
         version = _get_latest_version()
     elif not version.startswith("v"):
         version = "v" + version
 
-    asset = f"duckdb_cli-{plat}.zip"
-    url = f"{_RELEASES_URL}/download/{version}/{asset}"
-
     print(f"Downloading DuckDB {version} for {plat}...")
-    with urllib.request.urlopen(url) as resp:
-        data = resp.read()
+    data, extract = _fetch_asset(version, plat)
 
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
 
     extracted = []
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        for info in zf.infolist():
-            dest = os.path.join(out_dir, info.filename)
-            with open(dest, "wb") as f:
-                f.write(zf.read(info))
-            if sys.platform != "win32":
-                mode = os.stat(dest).st_mode
-                os.chmod(dest, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            print(f"  -> {dest}")
-            extracted.append(dest)
+    for name, content in extract(data):
+        dest = os.path.join(out_dir, name)
+        with open(dest, "wb") as f:
+            f.write(content)
+        if sys.platform != "win32":
+            mode = os.stat(dest).st_mode
+            os.chmod(dest, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        print(f"  -> {dest}")
+        extracted.append(dest)
 
     print("Done.")
     return extracted

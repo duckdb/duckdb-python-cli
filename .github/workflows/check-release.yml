@@ -1,4 +1,4 @@
-name: Check for new DuckDB release
+name: Check for new DuckDB releases
 
 on:
   schedule:
@@ -14,43 +14,44 @@ on:
           - pypi
         default: pypi-test
 
+env:
+  # Oldest DuckDB line the wrapper supports: 1.4 and older lack the extension_directories setting.
+  MINIMUM_VERSION: "1.5.0"
+
 jobs:
   check:
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.duckdb.outputs.version }}
-      published: ${{ steps.pypi.outputs.published }}
+      versions: ${{ steps.missing.outputs.versions }}
     steps:
-      - name: Get latest stable DuckDB release
-        id: duckdb
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Find stable DuckDB releases not yet published
+        id: missing
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(gh api repos/duckdb/duckdb/releases/latest --jq '.tag_name' | sed 's/^v//')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Latest DuckDB release: $version"
-
-      - name: Check if already published on PyPI
-        id: pypi
-        run: |
           if [ "${{ inputs.environment || 'pypi' }}" = "pypi" ]; then
-            pypi_url="https://pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
+            index="https://pypi.org"
           else
-            pypi_url="https://test.pypi.org/pypi/duckdb-cli/${{ steps.duckdb.outputs.version }}/json"
+            index="https://test.pypi.org"
           fi
-          status=$(curl -s -o /dev/null -w '%{http_code}' "$pypi_url")
-          if [ "$status" = "200" ]; then
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "Version ${{ steps.duckdb.outputs.version }} already published"
-          else
-            echo "published=false" >> "$GITHUB_OUTPUT"
-            echo "Version ${{ steps.duckdb.outputs.version }} not yet published"
-          fi
+          uv run --no-project scripts/missing_versions.py \
+            --minimum "$MINIMUM_VERSION" --index "$index" --github-token "$GH_TOKEN" > missing.txt
+          echo "Missing versions:"; cat missing.txt
+          versions=$(jq -R -s -c 'split("\n") | map(select(length > 0))' missing.txt)
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
 
   publish:
     needs: check
-    if: needs.check.outputs.published == 'false'
+    if: needs.check.outputs.versions != '[]'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJSON(needs.check.outputs.versions) }}
     steps:
       - name: Trigger publish workflow
         env:
@@ -58,5 +59,5 @@ jobs:
         run: |
           gh workflow run publish.yml \
             --repo "${{ github.repository }}" \
-            -f version="${{ needs.check.outputs.version }}" \
+            -f version="${{ matrix.version }}" \
             -f environment="${{ inputs.environment || 'pypi' }}"

@@ -44,7 +44,7 @@ dist = ["tomli; python_version < '3.11'"]
 test = ["pytest", "pytest-cov"]
 
 [tool.coverage.run]
-source = ["duckdb_cli", "build_wheels"]
+source = ["duckdb_cli", "build_wheels", "missing_versions"]
 
 [tool.coverage.report]
 exclude_lines = [
