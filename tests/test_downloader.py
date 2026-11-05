@@ -2,6 +2,10 @@
 
 import io
 import os
+import stat
+import sys
+import tarfile
+import urllib.error
 import zipfile
 from unittest.mock import MagicMock, patch
 
@@ -24,6 +28,49 @@ def _make_zip(filenames):
         for name in filenames:
             zf.writestr(name, b"fake-binary-content")
     return buf.getvalue()
+
+
+def _make_tar(filenames):
+    """Create an in-memory tar.gz with dummy files, directories included as entries."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name in filenames:
+            if name.endswith("/"):
+                info = tarfile.TarInfo(name.rstrip("/"))
+                info.type = tarfile.DIRTYPE
+                tf.addfile(info)
+                continue
+            content = b"fake-binary-content"
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            tf.addfile(info, io.BytesIO(content))
+    return buf.getvalue()
+
+
+def _response(data):
+    resp = MagicMock()
+    resp.read.return_value = data
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+def _http_error(url, code):
+    return urllib.error.HTTPError(url, code, "error", {}, None)
+
+
+def _fake_releases(assets):
+    """urlopen stand-in serving the given {asset name: bytes}; other URLs get 404."""
+    calls = []
+
+    def urlopen(url, *args, **kwargs):
+        calls.append(url)
+        name = url.rsplit("/", 1)[-1]
+        if name in assets:
+            return _response(assets[name])
+        raise _http_error(url, 404)
+
+    return urlopen, calls
 
 
 class TestDetectPlatform:
@@ -60,75 +107,90 @@ class TestDetectPlatform:
 
 
 class TestDownload:
-    def test_download_latest(self, tmp_path):
-        zip_data = _make_zip(["duckdb"])
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = zip_data
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+    def test_download_latest_tarball(self, tmp_path):
+        urlopen, calls = _fake_releases({"duckdb-cli-linux-amd64.tar.gz": _make_tar(["duckdb"])})
 
-        with patch("duckdb_cli.downloader._get_latest_version", return_value="v1.0.0"), \
-             patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp):
+        with patch("duckdb_cli.downloader._get_latest_version", return_value="v2.0.0"), \
+             patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
             result = download("linux-amd64", out_dir=str(tmp_path / "bin"))
 
-        assert len(result) == 1
-        assert os.path.basename(result[0]) == "duckdb"
-        assert os.path.isfile(result[0])
+        assert calls == ["https://github.com/duckdb/duckdb/releases/download/v2.0.0/duckdb-cli-linux-amd64.tar.gz"]
+        assert [os.path.basename(r) for r in result] == ["duckdb"]
+        with open(result[0], "rb") as f:
+            assert f.read() == b"fake-binary-content"
+        if sys.platform != "win32":
+            assert os.stat(result[0]).st_mode & stat.S_IXUSR
 
-    def test_download_specific_version(self, tmp_path):
-        zip_data = _make_zip(["duckdb"])
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = zip_data
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+    def test_falls_back_to_zip_when_tarball_missing(self, tmp_path):
+        urlopen, calls = _fake_releases({"duckdb_cli-osx-arm64.zip": _make_zip(["duckdb"])})
 
-        with patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
-            result = download("osx-arm64", version="1.2.3", out_dir=str(tmp_path / "bin"))
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
+            result = download("osx-arm64", version="1.4.4", out_dir=str(tmp_path / "bin"))
 
-        call_url = mock_urlopen.call_args[0][0]
-        assert "v1.2.3" in call_url
-        assert len(result) == 1
+        assert calls == [
+            "https://github.com/duckdb/duckdb/releases/download/v1.4.4/duckdb-cli-osx-arm64.tar.gz",
+            "https://github.com/duckdb/duckdb/releases/download/v1.4.4/duckdb_cli-osx-arm64.zip",
+        ]
+        assert [os.path.basename(r) for r in result] == ["duckdb"]
+
+    def test_no_asset_raises(self, tmp_path):
+        urlopen, calls = _fake_releases({})
+
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen), \
+             pytest.raises(RuntimeError, match="v9.9.9 on linux-amd64"):
+            download("linux-amd64", version="9.9.9", out_dir=str(tmp_path / "bin"))
+
+        assert len(calls) == 2
+        assert not os.path.exists(tmp_path / "bin")
+
+    def test_non_404_error_propagates(self, tmp_path):
+        def urlopen(url, *args, **kwargs):
+            raise _http_error(url, 503)
+
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen), \
+             pytest.raises(urllib.error.HTTPError) as excinfo:
+            download("linux-amd64", version="2.0.0", out_dir=str(tmp_path / "bin"))
+
+        assert excinfo.value.code == 503
+        assert excinfo.value.url.endswith("duckdb-cli-linux-amd64.tar.gz")
 
     def test_download_version_with_v_prefix(self, tmp_path):
-        zip_data = _make_zip(["duckdb"])
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = zip_data
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        urlopen, calls = _fake_releases({"duckdb-cli-osx-arm64.tar.gz": _make_tar(["duckdb"])})
 
-        with patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp) as mock_urlopen:
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
             download("osx-arm64", version="v1.2.3", out_dir=str(tmp_path / "bin"))
 
-        call_url = mock_urlopen.call_args[0][0]
-        assert "v1.2.3" in call_url
-        assert "vv1.2.3" not in call_url
+        assert "/v1.2.3/" in calls[0]
+        assert "vv1.2.3" not in calls[0]
 
     def test_download_creates_out_dir(self, tmp_path):
-        zip_data = _make_zip(["duckdb"])
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = zip_data
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        urlopen, _ = _fake_releases({"duckdb-cli-linux-amd64.tar.gz": _make_tar(["duckdb"])})
 
         out = str(tmp_path / "new" / "dir")
-        with patch("duckdb_cli.downloader._get_latest_version", return_value="v1.0.0"), \
-             patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp):
+        with patch("duckdb_cli.downloader._get_latest_version", return_value="v2.0.0"), \
+             patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
             download("linux-amd64", out_dir=out)
 
         assert os.path.isdir(out)
 
-    def test_download_returns_multiple_files(self, tmp_path):
-        zip_data = _make_zip(["duckdb", "LICENSE"])
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = zip_data
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+    def test_tarball_flattens_paths_and_skips_directories(self, tmp_path):
+        urlopen, _ = _fake_releases({
+            "duckdb-cli-windows-amd64.tar.gz": _make_tar(["./", "./duckdb.exe", "./LICENSE"]),
+        })
 
-        with patch("duckdb_cli.downloader._get_latest_version", return_value="v1.0.0"), \
-             patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp):
-            result = download("linux-amd64", out_dir=str(tmp_path / "bin"))
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
+            result = download("windows-amd64", version="2.0.0", out_dir=str(tmp_path / "bin"))
 
-        assert len(result) == 2
+        assert sorted(os.path.basename(r) for r in result) == ["LICENSE", "duckdb.exe"]
+        assert sorted(os.listdir(tmp_path / "bin")) == ["LICENSE", "duckdb.exe"]
+
+    def test_zip_returns_multiple_files_and_skips_directories(self, tmp_path):
+        urlopen, _ = _fake_releases({"duckdb_cli-linux-amd64.zip": _make_zip(["dir/", "duckdb", "LICENSE"])})
+
+        with patch("duckdb_cli.downloader.urllib.request.urlopen", side_effect=urlopen):
+            result = download("linux-amd64", version="1.4.4", out_dir=str(tmp_path / "bin"))
+
+        assert sorted(os.path.basename(r) for r in result) == ["LICENSE", "duckdb"]
 
 
 class TestEnsureBinary:
@@ -181,10 +243,7 @@ class TestEnsureBinary:
 
 class TestGetLatestVersion:
     def test_parses_tag_name(self):
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"tag_name": "v1.5.0"}'
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp = _response(b'{"tag_name": "v1.5.0"}')
 
         with patch("duckdb_cli.downloader.urllib.request.urlopen", return_value=mock_resp):
             assert _get_latest_version() == "v1.5.0"
