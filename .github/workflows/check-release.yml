@@ -1,18 +1,10 @@
 name: Check for new DuckDB releases
 
+
 on:
   schedule:
     - cron: "0 3 * * *" # every night at 3:00 UTC
   workflow_dispatch: # allow manual trigger
-    inputs:
-      environment:
-        description: "Target PyPI environment"
-        required: true
-        type: choice
-        options:
-          - pypi-test
-          - pypi
-        default: pypi-test
 
 env:
   # Oldest DuckDB line the wrapper supports: 1.4 and older lack the extension_directories setting.
@@ -33,13 +25,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "${{ inputs.environment || 'pypi' }}" = "pypi" ]; then
-            index="https://pypi.org"
-          else
-            index="https://test.pypi.org"
-          fi
           uv run --no-project scripts/missing_versions.py \
-            --minimum "$MINIMUM_VERSION" --index "$index" --github-token "$GH_TOKEN" > missing.txt
+            --minimum "$MINIMUM_VERSION" --index https://pypi.org --github-token "$GH_TOKEN" > missing.txt
           echo "Missing versions:"; cat missing.txt
           versions=$(jq -R -s -c 'split("\n") | map(select(length > 0))' missing.txt)
           echo "versions=$versions" >> "$GITHUB_OUTPUT"
@@ -56,8 +43,6 @@ jobs:
       - name: Trigger publish workflow
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ matrix.version }}
         run: |
-          gh workflow run publish.yml \
-            --repo "${{ github.repository }}" \
-            -f version="${{ matrix.version }}" \
-            -f environment="${{ inputs.environment || 'pypi' }}"
+          gh workflow run publish.yml --repo "${{ github.repository }}" -f version="$VERSION" -f promote=true
