@@ -1,20 +1,29 @@
 name: Publish to PyPI
 
+# The platform tests against a staging copy on test.pypi replace the environment approval.
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "DuckDB version to publish (e.g. 1.4.4)"
+        description: "DuckDB version to publish (e.g. 2.0.0)"
         required: true
         type: string
-      environment:
-        description: "Target PyPI environment"
+      promote:
+        description: "Upload to pypi.org after the tests pass (off: stop after the test.pypi stage)"
         required: true
-        type: choice
-        options:
-          - pypi-test
-          - pypi
-        default: pypi-test
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ inputs.version }}
+
+env:
+  # Staging wheels carry this version suffix so test.pypi, which never reuses a file name, accepts every run.
+  STAGE_VERSION: ${{ inputs.version }}.dev${{ github.run_id }}
 
 jobs:
   build:
@@ -24,28 +33,90 @@ jobs:
 
       - uses: astral-sh/setup-uv@v6
 
-      - name: Build wheels
-        run: uv run --no-project scripts/build_wheels.py --version ${{ inputs.version }}
+      - name: Build the production wheels and a staging copy with the same binary
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          uv run --no-project scripts/build_wheels.py --version "$VERSION" --out-dir dist
+          uv run --no-project scripts/build_wheels.py --version "$STAGE_VERSION" --download-version "$VERSION" --out-dir stage
 
       - uses: actions/upload-artifact@v4
         with:
           name: wheels
           path: dist/*.whl
 
-  publish:
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stage
+          path: stage/*.whl
+
+  # Both uploads use trusted publishing, as the releases before this workflow did: each environment has a
+  # publisher registered on its index for this workflow file, and the job's OIDC token is the credential.
+  stage:
     needs: build
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    environment: pypi-test
+    permissions:
+      id-token: write
+    steps:
+      - uses: astral-sh/setup-uv@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: stage
+          path: stage
+
+      - name: Upload the staging wheels to test.pypi
+        run: uv publish --trusted-publishing always --check-url https://test.pypi.org/simple/ --publish-url https://test.pypi.org/legacy/ stage/*.whl
+
+  test:
+    needs: stage
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            runner: ubuntu-latest
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: osx-amd64
+            runner: macos-15-intel
+          - platform: osx-arm64
+            runner: macos-latest
+          - platform: windows-amd64
+            runner: windows-latest
+          - platform: windows-arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Install the staged wheel from test.pypi and run the CLI
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 -m venv venv
+          if [ -d venv/Scripts ]; then bin=venv/Scripts; else bin=venv/bin; fi
+          "$bin/python" -m pip install --quiet --disable-pip-version-check --only-binary :all: --no-deps \
+            --index-url https://test.pypi.org/simple/ "duckdb-cli==$STAGE_VERSION"
+          "$bin/duckdb" --version | tee version.txt
+          grep -qF "v$VERSION " version.txt
+          "$bin/duckdb" -csv -c "select 42 as answer" | tee answer.txt
+          grep -qx "42" answer.txt
+
+  promote:
+    needs: test
+    if: ${{ inputs.promote }}
+    runs-on: ubuntu-latest
+    environment: pypi
     permissions:
       id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: wheels
-          path: dist/
+          path: dist
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          repository-url: ${{ inputs.environment == 'pypi-test' && 'https://test.pypi.org/legacy/' || '' }}
+          skip-existing: true
