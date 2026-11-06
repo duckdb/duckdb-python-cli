@@ -1,58 +1,72 @@
 import os
 import subprocess
 import sys
+import uuid
 
 
 def _find_binary():
-    """Find the DuckDB CLI binary, downloading if necessary."""
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
     bin_name = "duckdb.exe" if sys.platform == "win32" else "duckdb"
     bin_path = os.path.join(pkg_dir, bin_name)
     if os.path.isfile(bin_path):
         return bin_path
-    # Binary not bundled (dev install) — use downloader
     from duckdb_cli.downloader import ensure_binary
+
     return ensure_binary()
 
 
 def _get_extensions_dir():
-    """Return path to .duckdb_extensions in site-packages, or None."""
+    """The .duckdb_extensions directory next to the package, or None when it does not exist."""
     pkg_dir = os.path.dirname(os.path.abspath(__file__))
-    site_packages = os.path.dirname(pkg_dir)
-    ext_dir = os.path.join(site_packages, ".duckdb_extensions")
-    return ext_dir
+    ext_dir = os.path.join(os.path.dirname(pkg_dir), ".duckdb_extensions")
+    return ext_dir if os.path.isdir(ext_dir) else None
 
 
-def _build_ext_cmd(ext_dir):
-    """Build the SQL command to configure the extension search path.
+def _is_writable(directory):
+    # os.access grants write on every Windows directory, and tempfile retries an access-denied create
+    # up to os.TMP_MAX times there before Python 3.13, so the probe is one explicit create.
+    probe = os.path.join(directory, f".write-probe-{os.getpid()}-{uuid.uuid4().hex}")
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_TEMPORARY", 0)
+    try:
+        fd = os.open(probe, flags, 0o600)
+    except OSError:
+        return False
+    os.close(fd)
+    if not hasattr(os, "O_TEMPORARY"):
+        try:
+            os.unlink(probe)
+        except OSError:
+            pass
+    return True
 
-    The idea is:
-    - If extension_directories already has something set, we can assume duckdb
-      will not install extensions in our pip-managed ext dir;
-    - If extension_directory already has something set, then we can assume the
-      same;
-    - Only otherwise, we must prepend a default extension directory that duckdb
-      may install extensions to. The risk is of course that our default is
-      somehow invalid. But we just do not have a way to query the default right
-      now, so this will have to do.
+
+def _build_ext_cmd(ext_dir, writable):
+    """SQL that puts the pip directory in the extension search path: first when DuckDB can install into it.
+
+    Autoinstall checks only the first directory before downloading, so a pip-installed extension is
+    autoloaded without a download only when its directory comes first; but the first directory is also
+    where DuckDB installs, so a read-only one goes last and stays searchable for LOAD. Setting the list
+    replaces the engine default, so the default is kept when nothing else is configured. The deprecated
+    extension_directory setting always precedes the list in the engine.
     """
     escaped = ext_dir.replace("'", "''")
-    return f"""
-    SET extension_directories = list_concat(
+    others = """
       CASE
           WHEN current_setting('extension_directories') != '[]' THEN current_setting('extension_directories')::VARCHAR[]
           WHEN current_setting('extension_directory') != '' THEN []
           ELSE ['~/.duckdb/extensions']
-      END,
-      ['{escaped}']
-    );
-    """
+      END"""
+    if writable:
+        return f"SET extension_directories = list_prepend('{escaped}', {others});"
+    return f"SET extension_directories = list_append({others}, '{escaped}');"
 
 
 def main():
     exe = _find_binary()
+    cmd = [exe]
     ext_dir = _get_extensions_dir()
-    cmd = [exe, "-cmd", _build_ext_cmd(ext_dir)]
+    if ext_dir is not None:
+        cmd += ["-cmd", _build_ext_cmd(ext_dir, _is_writable(ext_dir))]
     cmd += sys.argv[1:]
     raise SystemExit(subprocess.call(cmd))
 
