@@ -14,6 +14,11 @@ on:
         required: true
         type: boolean
         default: false
+      download_version:
+        description: "DuckDB release whose binary the wheels carry, when it differs from the version (e.g. 2.0.0 for a 2.0.0.post1 that only changes the wrapper or the metadata)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -24,6 +29,7 @@ concurrency:
 env:
   # Staging wheels carry this version suffix so test.pypi, which never reuses a file name, accepts every run.
   STAGE_VERSION: ${{ inputs.version }}.dev${{ github.run_id }}
+  DOWNLOAD_VERSION: ${{ inputs.download_version || inputs.version }}
 
 jobs:
   build:
@@ -37,8 +43,8 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          uv run --no-project scripts/build_wheels.py --version "$VERSION" --out-dir dist
-          uv run --no-project scripts/build_wheels.py --version "$STAGE_VERSION" --download-version "$VERSION" --out-dir stage
+          uv run --no-project scripts/build_wheels.py --version "$VERSION" --download-version "$DOWNLOAD_VERSION" --out-dir dist
+          uv run --no-project scripts/build_wheels.py --version "$STAGE_VERSION" --download-version "$DOWNLOAD_VERSION" --out-dir stage
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,15 +97,13 @@ jobs:
     steps:
       - name: Install the staged wheel from test.pypi and run the CLI
         shell: bash
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           python3 -m venv venv
           if [ -d venv/Scripts ]; then bin=venv/Scripts; else bin=venv/bin; fi
           "$bin/python" -m pip install --quiet --disable-pip-version-check --only-binary :all: --no-deps \
             --index-url https://test.pypi.org/simple/ "duckdb-cli==$STAGE_VERSION"
           "$bin/duckdb" --version | tee version.txt
-          grep -qF "v$VERSION " version.txt
+          grep -qF "v$DOWNLOAD_VERSION " version.txt
           "$bin/duckdb" -csv -c "select 42 as answer" | tee answer.txt
           grep -qx "42" answer.txt
 
