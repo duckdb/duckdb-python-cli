@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import os
+import re
 import sys
 import zipfile
 from unittest.mock import patch
@@ -219,3 +220,54 @@ class TestMainCli:
             build_wheels.main()
 
         assert os.path.isdir(out_dir)
+
+
+class TestExtras:
+    EXTRAS = build_wheels._read_pyproject()["tool"]["duckdb-cli"]["extras"]
+    PUBLISHED = {
+        "avro", "aws", "azure", "delta", "demo_capi", "ducklake", "encodings", "excel", "fts", "httpfs", "iceberg",
+        "inet", "lance", "legacy_parser", "motherduck", "mysql", "odbc", "postgres", "quack", "spatial", "sqlite",
+        "sqlsmith", "tpcds", "tpch", "ui", "unity_catalog", "vortex", "vss",
+    }
+    ALIASES = {
+        "http": "httpfs", "https": "httpfs", "s3": "httpfs", "md": "motherduck", "mysql_scanner": "mysql",
+        "odbc_scanner": "odbc", "postgres_scanner": "postgres", "sqlite_scanner": "sqlite", "sqlite3": "sqlite",
+        "uc_catalog": "unity_catalog",
+    }
+
+    @staticmethod
+    def _project(deps):
+        return deps[0].split("==")[0][len("duckdb-core-ext-"):]
+
+    def test_every_extra_names_one_project_at_the_placeholder_version(self):
+        for name, deps in self.EXTRAS.items():
+            assert len(deps) == 1, name
+            assert re.fullmatch(r"duckdb-core-ext-[a-z_]+==0\.0\.0", deps[0]), (name, deps)
+
+    def test_one_extra_per_published_extension(self):
+        own = {name for name, deps in self.EXTRAS.items() if self._project(deps) == name}
+        assert own == self.PUBLISHED
+
+    def test_aliases_point_at_published_extensions(self):
+        aliases = {name: self._project(deps) for name, deps in self.EXTRAS.items() if self._project(deps) != name}
+        assert aliases == self.ALIASES
+
+    def test_metadata_pins_extras_to_the_download_version_and_adds_all(self):
+        extras = {"httpfs": ["duckdb-core-ext-httpfs==0.0.0"], "s3": ["duckdb-core-ext-httpfs==0.0.0"]}
+        metadata = build_wheels.generate_metadata({"name": "duckdb-cli"}, "2.0.0.post1", download_version="2.0.0", extras=extras)
+        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "httpfs"' in metadata
+        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "s3"' in metadata
+        assert metadata.count('duckdb-core-ext-httpfs==2.0.0 ; extra == "all"') == 1
+        assert "0.0.0" not in metadata
+
+    def test_built_wheel_carries_the_table(self, tmp_path):
+        out_dir = str(tmp_path / "dist")
+        with patch("sys.argv", ["build_wheels.py", "--version", "2.0.0.post1", "--download-version", "2.0.0", "--platform", "linux-arm64", "--out-dir", out_dir]), \
+             patch.object(build_wheels, "download", side_effect=_fake_download):
+            build_wheels.main()
+        (wheel,) = os.listdir(out_dir)
+        with zipfile.ZipFile(os.path.join(out_dir, wheel)) as z:
+            metadata = z.read([n for n in z.namelist() if n.endswith("METADATA")][0]).decode()
+        assert 'Requires-Dist: duckdb-core-ext-odbc==2.0.0 ; extra == "odbc_scanner"' in metadata
+        assert "Provides-Extra: json" not in metadata
+        assert "Provides-Extra: all" in metadata
