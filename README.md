@@ -28,3 +28,14 @@ After installation, the `duckdb` command is available:
 ```bash
 duckdb
 ```
+
+## Extensions
+
+Extension packages such as `duckdb-core-ext-httpfs` install an extension binary into `site-packages/.duckdb_extensions`, and `duckdb` adds that directory to DuckDB's extension search path, so `LOAD httpfs` finds it without a download:
+
+```bash
+pip install "duckdb-cli[httpfs]==2.0.0"
+duckdb -c "LOAD httpfs"
+```
+
+The directory comes after the directories DuckDB already searches. DuckDB's automatic loading checks only the first directory before downloading, so a query that autoloads an extension may download it again, and offline that autoload fails; an explicit `LOAD` always works. This holds until the bundled engine treats an extension found in any configured directory as installed.
