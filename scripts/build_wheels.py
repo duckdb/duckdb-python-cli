@@ -85,16 +85,7 @@ def generate_metadata(project, version, download_version=None, extras=None):
     for label, url in project.get("urls", {}).items():
         lines.append(f"Project-URL: {label}, {url}")
 
-    # Optional dependencies (extras)
     optional_deps = dict(extras or {})
-    # Generate "all" extra from all individual extras
-    if optional_deps and "all" not in optional_deps:
-        all_deps = []
-        for deps in optional_deps.values():
-            all_deps.extend(deps)
-        # Deduplicate while preserving order
-        seen = set()
-        optional_deps["all"] = [d for d in all_deps if d not in seen and not seen.add(d)]
     for extra_name in sorted(optional_deps):
         lines.append(f"Provides-Extra: {extra_name}")
     for extra_name in sorted(optional_deps):
