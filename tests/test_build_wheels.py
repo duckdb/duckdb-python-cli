@@ -252,12 +252,13 @@ class TestExtras:
         aliases = {name: self._project(deps) for name, deps in self.EXTRAS.items() if self._project(deps) != name}
         assert aliases == self.ALIASES
 
-    def test_metadata_pins_extras_to_the_download_version_and_adds_all(self):
+    def test_metadata_pins_extras_to_the_download_version_and_nothing_else(self):
         extras = {"httpfs": ["duckdb-core-ext-httpfs==0.0.0"], "s3": ["duckdb-core-ext-httpfs==0.0.0"]}
         metadata = build_wheels.generate_metadata({"name": "duckdb-cli"}, "2.0.0.post1", download_version="2.0.0", extras=extras)
         assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "httpfs"' in metadata
         assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "s3"' in metadata
-        assert metadata.count('duckdb-core-ext-httpfs==2.0.0 ; extra == "all"') == 1
+        assert metadata.count("Requires-Dist:") == 2
+        assert "all" not in metadata
         assert "0.0.0" not in metadata
 
     def test_built_wheel_carries_the_table(self, tmp_path):
@@ -270,4 +271,4 @@ class TestExtras:
             metadata = z.read([n for n in z.namelist() if n.endswith("METADATA")][0]).decode()
         assert 'Requires-Dist: duckdb-core-ext-odbc==2.0.0 ; extra == "odbc_scanner"' in metadata
         assert "Provides-Extra: json" not in metadata
-        assert "Provides-Extra: all" in metadata
+        assert "Provides-Extra: all" not in metadata
