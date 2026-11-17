@@ -23,10 +23,12 @@ pip install duckdb-cli
 
 ## Usage
 
-After installation, the `duckdb` command is available:
+After installation, the `duckdb` command is available, and `duckdb-cli` is the same command under the package's name, so `uvx` runs it without an install:
 
 ```bash
 duckdb
+uvx duckdb-cli
+uvx "duckdb-cli[httpfs]" -c "LOAD httpfs"
 ```
 
 ## Extensions

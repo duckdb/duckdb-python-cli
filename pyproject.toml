@@ -31,6 +31,7 @@ Changelog = "https://github.com/duckdb/duckdb/releases"
 
 [project.scripts]
 duckdb = "duckdb_cli.__main__:main"
+duckdb-cli = "duckdb_cli.__main__:main"
 
 [build-system]
 requires = ["uv_build"]
