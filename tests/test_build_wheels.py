@@ -240,10 +240,10 @@ class TestExtras:
     def _project(deps):
         return deps[0].split("==")[0][len("duckdb-core-ext-"):]
 
-    def test_every_extra_names_one_project_at_the_placeholder_version(self):
+    def test_every_extra_names_one_project_at_the_placeholder_version_and_its_post_releases(self):
         for name, deps in self.EXTRAS.items():
             assert len(deps) == 1, name
-            assert re.fullmatch(r"duckdb-core-ext-[a-z_]+==0\.0\.0", deps[0]), (name, deps)
+            assert re.fullmatch(r"duckdb-core-ext-[a-z_]+==0\.0\.0\.\*", deps[0]), (name, deps)
 
     def test_one_extra_per_published_extension(self):
         own = {name for name, deps in self.EXTRAS.items() if self._project(deps) == name}
@@ -254,10 +254,10 @@ class TestExtras:
         assert aliases == self.ALIASES
 
     def test_metadata_pins_extras_to_the_download_version_and_nothing_else(self):
-        extras = {"httpfs": ["duckdb-core-ext-httpfs==0.0.0"], "s3": ["duckdb-core-ext-httpfs==0.0.0"]}
+        extras = {"httpfs": ["duckdb-core-ext-httpfs==0.0.0.*"], "s3": ["duckdb-core-ext-httpfs==0.0.0.*"]}
         metadata = build_wheels.generate_metadata({"name": "duckdb-cli"}, "2.0.0.post1", download_version="2.0.0", extras=extras)
-        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "httpfs"' in metadata
-        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0 ; extra == "s3"' in metadata
+        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0.* ; extra == "httpfs"' in metadata
+        assert 'Requires-Dist: duckdb-core-ext-httpfs==2.0.0.* ; extra == "s3"' in metadata
         assert metadata.count("Requires-Dist:") == 2
         assert "all" not in metadata
         assert "0.0.0" not in metadata
@@ -270,6 +270,6 @@ class TestExtras:
         (wheel,) = os.listdir(out_dir)
         with zipfile.ZipFile(os.path.join(out_dir, wheel)) as z:
             metadata = z.read([n for n in z.namelist() if n.endswith("METADATA")][0]).decode()
-        assert 'Requires-Dist: duckdb-core-ext-odbc==2.0.0 ; extra == "odbc_scanner"' in metadata
+        assert 'Requires-Dist: duckdb-core-ext-odbc==2.0.0.* ; extra == "odbc_scanner"' in metadata
         assert "Provides-Extra: json" not in metadata
         assert "Provides-Extra: all" not in metadata
