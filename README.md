@@ -28,8 +28,17 @@ After installation, the `duckdb` command is available, and `duckdb-cli` is the s
 ```bash
 duckdb
 uvx duckdb-cli
+uvx duckdb-cli@2.0.0
+uvx duckdb-cli@latest
 uvx "duckdb-cli[httpfs]" -c "LOAD httpfs"
+uv tool install duckdb-cli
 ```
+
+`uvx duckdb-cli` keeps the version it resolved the first time; `@latest` refreshes it and `@2.0.0` pins one. `uv tool install` puts `duckdb` and `duckdb-cli` on the PATH for good.
+
+## Agents
+
+The DuckDB 2.0 CLI has an [agent mode](https://duckdb.org/docs/stable/clients/cli/agent_mode): when an environment variable of a known AI coding agent is set, such as `CLAUDECODE` or `AI_AGENT`, and stdout is a pipe, results are compact Markdown tables with a row count footer and errors are JSON on stderr. The package changes nothing about it: the environment and the pipe reach the binary as they are, and so do `-agent`, `-no-agent` and `-c ".help agent"`. An agent in a Python environment with uv needs no install: `uvx duckdb-cli -c "..."` runs the current release.
 
 ## Extensions
 
