@@ -1,4 +1,5 @@
 import os
+import signal
 import subprocess
 import sys
 
@@ -46,7 +47,11 @@ def main():
     if ext_dir is not None:
         cmd += ["-cmd", _build_ext_cmd(ext_dir)]
     cmd += sys.argv[1:]
-    raise SystemExit(subprocess.call(cmd))
+    proc = subprocess.Popen(cmd)
+    # The CLI handles an interrupt itself; the wrapper must outlive it instead of dying with a traceback.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    status = proc.wait()
+    raise SystemExit(status if status >= 0 else 128 - status)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 """Tests for duckdb_cli.__main__."""
 
 import os
-from unittest.mock import patch
+import signal
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -80,7 +81,7 @@ class TestMain:
     def test_no_extensions_dir_runs_binary_unchanged(self):
         with patch("duckdb_cli.__main__._find_binary", return_value="/fake/duckdb"), \
              patch("duckdb_cli.__main__._get_extensions_dir", return_value=None), \
-             patch("duckdb_cli.__main__.subprocess.call", return_value=0) as call, \
+             patch("duckdb_cli.__main__.subprocess.Popen", **{"return_value.wait.return_value": 0}) as call, \
              patch("duckdb_cli.__main__.sys.argv", ["duckdb", "-c", "SELECT 1"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
@@ -91,7 +92,7 @@ class TestMain:
     def test_extensions_dir_adds_cmd_before_user_args(self):
         with patch("duckdb_cli.__main__._find_binary", return_value="/fake/duckdb"), \
              patch("duckdb_cli.__main__._get_extensions_dir", return_value="/sp/.duckdb_extensions"), \
-             patch("duckdb_cli.__main__.subprocess.call", return_value=0) as call, \
+             patch("duckdb_cli.__main__.subprocess.Popen", **{"return_value.wait.return_value": 0}) as call, \
              patch("duckdb_cli.__main__.sys.argv", ["duckdb", "-c", "SELECT 1"]):
             with pytest.raises(SystemExit):
                 main()
@@ -105,9 +106,31 @@ class TestMain:
     def test_forwards_exit_code(self):
         with patch("duckdb_cli.__main__._find_binary", return_value="/fake/duckdb"), \
              patch("duckdb_cli.__main__._get_extensions_dir", return_value=None), \
-             patch("duckdb_cli.__main__.subprocess.call", return_value=42), \
+             patch("duckdb_cli.__main__.subprocess.Popen", **{"return_value.wait.return_value": 42}), \
              patch("duckdb_cli.__main__.sys.argv", ["duckdb"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
 
         assert exc_info.value.code == 42
+
+    def test_signal_death_becomes_shell_exit_code(self):
+        with patch("duckdb_cli.__main__._find_binary", return_value="/fake/duckdb"), \
+             patch("duckdb_cli.__main__._get_extensions_dir", return_value=None), \
+             patch("duckdb_cli.__main__.subprocess.Popen", **{"return_value.wait.return_value": -9}), \
+             patch("duckdb_cli.__main__.sys.argv", ["duckdb"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 137
+
+    def test_ignores_sigint_only_after_the_child_started(self):
+        order = []
+        with patch("duckdb_cli.__main__._find_binary", return_value="/fake/duckdb"), \
+             patch("duckdb_cli.__main__._get_extensions_dir", return_value=None), \
+             patch("duckdb_cli.__main__.subprocess.Popen", side_effect=lambda cmd: order.append("popen") or MagicMock(**{"wait.return_value": 0})), \
+             patch("duckdb_cli.__main__.signal.signal", side_effect=lambda num, handler: order.append(("signal", num, handler))), \
+             patch("duckdb_cli.__main__.sys.argv", ["duckdb"]):
+            with pytest.raises(SystemExit):
+                main()
+
+        assert order == ["popen", ("signal", signal.SIGINT, signal.SIG_IGN)]
