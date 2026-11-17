@@ -177,7 +177,7 @@ def build_wheel(plat, version, project, out_dir, download_version=None, extras=N
             records.append((arcname, _record_hash(wheel_bytes), str(len(wheel_bytes))))
 
             # entry_points.txt
-            entry_points_content = "[console_scripts]\nduckdb = duckdb_cli.__main__:main\n"
+            entry_points_content = "[console_scripts]\nduckdb = duckdb_cli.__main__:main\nduckdb-cli = duckdb_cli.__main__:main\n"
             entry_points_bytes = entry_points_content.encode("utf-8")
             arcname = f"{dist_info}/entry_points.txt"
             _add_file(zf, arcname, entry_points_bytes)

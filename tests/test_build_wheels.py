@@ -109,6 +109,7 @@ class TestBuildWheel:
             ep_content = zf.read(ep_name).decode("utf-8")
             assert "[console_scripts]" in ep_content
             assert "duckdb = duckdb_cli.__main__:main" in ep_content
+            assert "duckdb-cli = duckdb_cli.__main__:main" in ep_content
 
             # top_level.txt
             tl_name = [n for n in names if n.endswith("top_level.txt")][0]

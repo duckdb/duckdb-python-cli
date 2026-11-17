@@ -106,6 +106,8 @@ jobs:
           grep -qF "v$DOWNLOAD_VERSION " version.txt
           "$bin/duckdb" -csv -c "select 42 as answer" | tee answer.txt
           grep -qx "42" answer.txt
+          "$bin/duckdb-cli" --version | tee version-cli.txt
+          cmp version.txt version-cli.txt
 
   promote:
     needs: test
